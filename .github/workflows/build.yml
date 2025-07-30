@@ -19,14 +19,14 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install pyinstaller
+        pip install -r requirements.txt
 
-    - name: Build EXE with PyInstaller
+    - name: Build with PyInstaller
       run: |
         pyinstaller --noconsole --onefile Login.py
 
     - name: Upload EXE artifact
       uses: actions/upload-artifact@v3
       with:
-        name: SocialMediaAppEXE
+        name: social-media-app-exe
         path: dist/Login.exe
