@@ -17,16 +17,16 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install dependencies
+    - name: Install PyInstaller
       run: |
         pip install pyinstaller
 
-    - name: Build with PyInstaller
+    - name: Build EXE
       run: |
-        pyinstaller --noconsole --onefile main.py
+        pyinstaller --noconsole --onefile Login.py
 
-    - name: Upload EXE artifact
+    - name: Upload EXE
       uses: actions/upload-artifact@v3
       with:
-        name: chat-app-exe
-        path: dist/main.exe
+        name: SocialAppEXE
+        path: dist/Login.exe
