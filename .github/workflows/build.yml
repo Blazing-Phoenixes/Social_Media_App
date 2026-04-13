@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Phoenix-Media
 
 on:
   push:
@@ -22,13 +22,19 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+        pip install pyinstaller pillow
 
-    - name: Build with PyInstaller
-      run: pyinstaller --onefile Login.py
+    - name: Build EXE with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed ^
+        --name SocialMediaApp ^
+        --add-data "*.png;." ^
+        --add-data "*.jpg;." ^
+        --add-data "*.ico;." ^
+        main.py
 
     - name: Upload EXE
       uses: actions/upload-artifact@v4
       with:
-        name: app-exe
-        path: dist/Login.exe
+        name: social-media-exe
+        path: dist/SocialMediaApp.exe
