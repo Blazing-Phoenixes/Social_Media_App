@@ -1,285 +1,311 @@
-# home_screen.py
-
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, simpledialog
+from tkinter import ttk, filedialog, simpledialog
 from PIL import Image, ImageTk
 import os
 import mimetypes
-import subprocess
-import platform
-import webbrowser
 
-from chat_gui import ChatWindow
 from Login_database import (
     search_users, send_friend_request, get_friend_requests, update_request_status,
-    get_friends_list, get_user_details, get_profile_image_path, unfriend_user,
+    get_friends_list, get_user_details, unfriend_user,
     post_media, get_public_media, get_private_media_for_user, delete_media
 )
-from profile_screen import ProfileScreen
 
-class HomeScreen:
-    def __init__(self, user):
-        self.user = user
-        self.is_dark = False
+# ================= MODERN ECOMMERCE THEME =================
+BG = "#0f172a"              # Dark background
+CARD = "#1e293b"           # Card background
+PRIMARY = "#6366f1"        # Indigo
+SECONDARY = "#22c55e"      # Green
+TEXT = "#f8fafc"           # White text
+SUBTEXT = "#94a3b8"        # Light gray
+ERROR = "#ef4444"
 
-        self.root = tk.Tk()
-        self.root.title("Home / Feed")
-        w, h = 1000, 700
-        x = (self.root.winfo_screenwidth() - w) // 2
-        y = (self.root.winfo_screenheight() - h) // 2
-        self.root.geometry(f"{w}x{h}+{x}+{y}")
-        self.root.configure(bg="#f9f9f9")
+FONT = ("Segoe UI", 11)
 
-        self.top = tk.Frame(self.root, bg="#f9f9f9")
-        self.top.pack(fill=tk.X, pady=5)
+class HomeFrame(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=BG)
+        self.app = app
+        self.user = None
+
+        self.grid_rowconfigure(2, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        # ================= HEADER =================
+        header = tk.Frame(self, bg="#1e293b", height=60)
+        header.grid(row=0, column=0, sticky="ew")
+
+        self.label = tk.Label(header, text="", bg="#1e293b",
+                              fg=TEXT, font=("Segoe UI", 14, "bold"))
+        self.label.pack(side="left", padx=15)
+
+        tk.Button(header, text="Profile", bg=PRIMARY, fg="white",
+                  relief="flat", padx=12,
+                  command=lambda: self.app.show_frame("ProfileFrame", user=self.user)
+        ).pack(side="right", padx=5, pady=10)
+
+        tk.Button(header, text="Logout", bg=ERROR, fg="white",
+                  relief="flat", padx=12,
+                  command=lambda: self.app.show_frame("LoginSignupApp")
+        ).pack(side="right", padx=5, pady=10)
+
+        # ================= SEARCH BAR =================
+        top = tk.Frame(self, bg=BG)
+        top.grid(row=1, column=0, sticky="ew")
 
         self.search_var = tk.StringVar()
-        self.search_entry = ttk.Entry(self.top, textvariable=self.search_var, width=30)
-        self.search_entry.pack(side=tk.LEFT, padx=10)
+
+        self.search_entry = tk.Entry(
+            top, textvariable=self.search_var,
+            font=("Segoe UI", 11),
+            bg="#1e293b", fg="white",
+            insertbackground="white",
+            relief="flat", width=40
+        )
+        self.search_entry.pack(side=tk.LEFT, padx=15, pady=10, ipady=5)
+
+        # 🔥 NEW SEARCH BUTTON (without breaking existing search)
+        tk.Button(top, text="Search",
+                  bg=PRIMARY, fg="white", relief="flat",
+                  command=self.render_search
+                  ).pack(side=tk.LEFT, padx=5)
+
+        # Live search still works
         self.search_entry.bind("<KeyRelease>", lambda e: self.render_search())
 
-        ttk.Button(self.top, text="Settings", command=self.open_profile).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(self.top, text="Dark Mode", command=self.toggle_dark).pack(side=tk.RIGHT, padx=5)
+        # ================= TABS =================
+        style = ttk.Style()
+        style.theme_use("default")
 
-        self.header = tk.Frame(self.root, bg="#f9f9f9")
-        self.header.pack(pady=5)
-        details = get_user_details(self.user)
-        img_path = get_profile_image_path(self.user)
-        if img_path and os.path.exists(img_path):
-            img = Image.open(img_path).resize((50, 50))
-            self.img_tk = ImageTk.PhotoImage(img)
-            tk.Label(self.header, image=self.img_tk, bg="#f9f9f9").pack(side=tk.LEFT, padx=10)
+        style.configure("TNotebook", background=BG)
+        style.configure("TNotebook.Tab",
+                        background="#1e293b",
+                        foreground="white",
+                        padding=10)
 
-        tk.Label(self.header, text=f"Welcome, {details[0]}\nEmail: {details[2] or 'N/A'}",
-                 font=("Arial", 12), bg="#f9f9f9").pack(side=tk.LEFT)
+        self.tabs = ttk.Notebook(self)
+        self.tabs.grid(row=2, column=0, sticky="nsew")
 
-        self.tabs = ttk.Notebook(self.root)
+        self.tab_media = ttk.Frame(self.tabs)
         self.tab_search = ttk.Frame(self.tabs)
         self.tab_requests = ttk.Frame(self.tabs)
         self.tab_friends = ttk.Frame(self.tabs)
-        self.tab_media = ttk.Frame(self.tabs)
-        self.tabs.add(self.tab_search, text="Search")
-        self.tabs.add(self.tab_requests, text="Requests")
-        self.tabs.add(self.tab_friends, text="Friends")
-        self.tabs.add(self.tab_media, text="Media Feed")
-        self.tabs.pack(fill=tk.BOTH, expand=True)
+
+        self.tabs.add(self.tab_media, text="🏠 Home")
+        self.tabs.add(self.tab_search, text="🔍 Search")
+        self.tabs.add(self.tab_requests, text="📩 Requests")
+        self.tabs.add(self.tab_friends, text="👥 Friends")
+
+        # 🔥 DEFAULT HOME SCREEN = MEDIA
+        self.tabs.select(self.tab_media)
 
         for name in ["search", "requests", "friends", "media"]:
             self.setup_scroll(getattr(self, f"tab_{name}"), name)
 
-        self.file_type_var = tk.StringVar(value="all")
-        self.show_message(self.search_scrollable, "(Type above to search users)")
-        tk.Button(self.tab_requests, text="Refresh", command=self.render_requests).pack(pady=5)
+        tk.Button(self.tab_media, text="⬆ Upload Media",
+                  bg=SECONDARY, fg="black", relief="flat",
+                  command=self.upload_media).pack(pady=10)
 
+        tk.Button(self.tab_requests, text="Refresh",
+                  bg=PRIMARY, fg="white",
+                  command=self.render_requests).pack(pady=5)
+
+    # ================= TOAST =================
+    def show_toast(self, msg, color=SECONDARY):
+        toast = tk.Label(self, text=msg, bg=color, fg="black",
+                         font=("Segoe UI", 10, "bold"))
+        toast.place(relx=0.5, rely=0.95, anchor="center")
+        self.after(2000, toast.destroy)
+
+    # ================= LOAD =================
+    def load_data(self, user):
+        self.user = user
+        details = get_user_details(user)
+
+        self.label.config(text=f"Welcome, {details[0]}")
+
+        self.search_var.set("")
         self.render_requests()
         self.render_friends()
         self.display_media_feed()
 
-        tk.Button(self.root, text="Logout", command=self.root.destroy).pack(pady=5)
-        self.auto_refresh()
-        self.root.mainloop()
-
+    # ================= SCROLL =================
     def setup_scroll(self, parent, name):
-        frame = tk.Frame(parent)
+        frame = tk.Frame(parent, bg=BG)
         setattr(self, f"{name}_frame", frame)
         frame.pack(fill=tk.BOTH, expand=True)
 
-        canvas = tk.Canvas(frame, highlightthickness=0, bg="#f9f9f9")
+        canvas = tk.Canvas(frame, bg=BG, highlightthickness=0)
         setattr(self, f"{name}_canvas", canvas)
 
         sb = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
-        setattr(self, f"{name}_sb", sb)
 
-        scrollable = tk.Frame(canvas, bg="#f9f9f9")
+        scrollable = tk.Frame(canvas, bg=BG)
         setattr(self, f"{name}_scrollable", scrollable)
 
-        scrollable.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        scrollable.bind("<Configure>",
+                        lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
         canvas.create_window((0, 0), window=scrollable, anchor="nw")
         canvas.configure(yscrollcommand=sb.set)
 
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
 
-    def show_message(self, parent_frame, msg):
-        self.clear_children(parent_frame)
-        tk.Label(parent_frame, text=msg, fg="#777", bg=parent_frame["bg"]).pack(pady=20)
-
     def clear_children(self, frame):
         for child in frame.winfo_children():
             child.destroy()
 
+    def show_message(self, parent, msg):
+        self.clear_children(parent)
+        tk.Label(parent, text=msg, fg=SUBTEXT, bg=BG,
+                 font=("Segoe UI", 11)).pack(pady=20)
+
+    # ================= SEARCH =================
     def render_search(self):
         self.clear_children(self.search_scrollable)
         query = self.search_var.get().strip()
+
         if not query:
-            self.show_message(self.search_scrollable, "(Type above to search users)")
+            self.show_message(self.search_scrollable, "Start typing to search users")
             return
+
         results = search_users(query)
+
         for uname, _ in results:
             if uname.lower() == self.user.lower():
                 continue
-            f = tk.Frame(self.search_scrollable, bg="#f9f9f9", bd=1, relief=tk.SOLID)
-            f.pack(fill=tk.X, padx=5, pady=3)
-            tk.Label(f, text=uname, bg="#f9f9f9", anchor="w").pack(side=tk.LEFT, padx=10)
-            ttk.Button(f, text="Send Request", command=lambda u=uname: self.send_req(u)).pack(side=tk.RIGHT, padx=5)
+
+            card = tk.Frame(self.search_scrollable, bg=CARD, bd=0)
+            card.pack(fill=tk.X, padx=12, pady=6)
+
+            tk.Label(card, text=uname, bg=CARD, fg=TEXT,
+                     font=("Segoe UI", 11)).pack(side=tk.LEFT, padx=10)
+
+            tk.Button(card, text="Add Friend",
+                      bg=PRIMARY, fg="white", relief="flat",
+                      command=lambda u=uname: self.send_req(u)
+                      ).pack(side=tk.RIGHT, padx=10, pady=5)
 
     def send_req(self, to):
         res = send_friend_request(self.user, to)
-        messagebox.showinfo("Request Status", res)
+        self.show_toast(res)
+        self.search_var.set("")
+        self.render_search()
 
+    # ================= REQUESTS =================
     def render_requests(self):
         self.clear_children(self.requests_scrollable)
         data = get_friend_requests(self.user)
+
         if not data:
-            self.show_message(self.requests_scrollable, "No pending requests.")
+            self.show_message(self.requests_scrollable, "No pending requests")
             return
+
         for sender, _ in data:
-            f = tk.Frame(self.requests_scrollable, bg="#f9f9f9", bd=1, relief=tk.SOLID)
-            f.pack(fill=tk.X, padx=5, pady=3)
-            tk.Label(f, text=sender, bg="#f9f9f9").pack(side=tk.LEFT, padx=10)
-            ttk.Button(f, text="Accept", command=lambda s=sender: self.respond(s, "accepted")).pack(side=tk.RIGHT, padx=2)
-            ttk.Button(f, text="Reject", command=lambda s=sender: self.respond(s, "rejected")).pack(side=tk.RIGHT, padx=2)
+            card = tk.Frame(self.requests_scrollable, bg=CARD)
+            card.pack(fill=tk.X, padx=10, pady=6)
+
+            tk.Label(card, text=sender, bg=CARD, fg=TEXT).pack(side=tk.LEFT, padx=10)
+
+            tk.Button(card, text="Accept", bg=SECONDARY,
+                      command=lambda s=sender: self.respond(s, "accepted")
+                      ).pack(side=tk.RIGHT, padx=5)
+
+            tk.Button(card, text="Reject", bg=ERROR, fg="white",
+                      command=lambda s=sender: self.respond(s, "rejected")
+                      ).pack(side=tk.RIGHT, padx=5)
 
     def respond(self, sender, action):
         res = update_request_status(sender, self.user, action)
-        messagebox.showinfo("Request", res)
+        self.show_toast(res)
         self.render_requests()
         self.render_friends()
 
+    # ================= FRIENDS =================
     def render_friends(self):
         self.clear_children(self.friends_scrollable)
         friends = get_friends_list(self.user)
-        if not friends:
-            self.show_message(self.friends_scrollable, "No friends yet.")
-            return
-        for f in friends:
-            f_frame = tk.Frame(self.friends_scrollable, bg="#f9f9f9", bd=1, relief=tk.SOLID)
-            f_frame.pack(fill=tk.X, padx=5, pady=3)
-            tk.Label(f_frame, text=f, bg="#f9f9f9").pack(side=tk.LEFT, padx=10)
-            ttk.Button(f_frame, text="Chat", command=lambda u=f: self.open_chat(u)).pack(side=tk.RIGHT, padx=2)
-            ttk.Button(f_frame, text="Unfriend", command=lambda u=f: self.remove_friend(u)).pack(side=tk.RIGHT, padx=2)
 
-    def open_chat(self, friend):
-        ChatWindow(tk.Toplevel(self.root), self.user, friend)
+        if not friends:
+            self.show_message(self.friends_scrollable, "No friends yet")
+            return
+
+        for f in friends:
+            card = tk.Frame(self.friends_scrollable, bg=CARD)
+            card.pack(fill=tk.X, padx=10, pady=6)
+
+            tk.Label(card, text=f, bg=CARD, fg=TEXT).pack(side=tk.LEFT, padx=10)
+
+            tk.Button(card, text="Chat", bg=PRIMARY, fg="white",
+                      command=lambda u=f: self.app.show_frame(
+                          "ChatFrame", sender=self.user, receiver=u)
+                      ).pack(side=tk.RIGHT, padx=5)
+
+            tk.Button(card, text="Remove", bg=ERROR, fg="white",
+                      command=lambda u=f: self.remove_friend(u)
+                      ).pack(side=tk.RIGHT, padx=5)
 
     def remove_friend(self, friend):
-        if messagebox.askyesno("Confirm", f"Remove {friend}?"):
-            if unfriend_user(self.user, friend):
-                messagebox.showinfo("Removed", f"{friend} unfriended.")
-                self.render_friends()
+        if unfriend_user(self.user, friend):
+            self.show_toast(f"{friend} removed", ERROR)
+            self.render_friends()
 
+    # ================= MEDIA =================
     def upload_media(self):
-        file_path = filedialog.askopenfilename(title="Select File (Max 500MB)")
+        file_path = filedialog.askopenfilename()
         if not file_path:
             return
-        if os.path.getsize(file_path) > 500 * 1024 * 1024:
-            messagebox.showerror("File Too Large", "Max 500MB allowed.")
-            return
-        visibility = simpledialog.askstring("Visibility", "Enter 'public' or 'private':")
-        if visibility not in ['public', 'private']:
-            messagebox.showerror("Invalid", "Choose 'public' or 'private'")
-            return
+
+        visibility = simpledialog.askstring("Visibility", "public/private")
         file_type = mimetypes.guess_type(file_path)[0] or 'unknown'
-        result = post_media(self.user, self.user, file_path, file_type, visibility)
-        messagebox.showinfo("Upload Status", result)
+
+        post_media(self.user, self.user, file_path, file_type, visibility)
+        self.show_toast("Uploaded successfully")
         self.display_media_feed()
 
     def display_media_feed(self):
         self.clear_children(self.media_scrollable)
 
-        filter_frame = tk.Frame(self.media_scrollable, bg="#f9f9f9")
-        filter_frame.pack(fill=tk.X, pady=5)
-        tk.Label(filter_frame, text="Filter by Type:", bg="#f9f9f9").pack(side=tk.LEFT, padx=5)
-        options = ["all", "image", "audio", "video", "document"]
-        tk.OptionMenu(filter_frame, self.file_type_var, *options, command=lambda e: self.display_media_feed()).pack(side=tk.LEFT)
-        tk.Button(filter_frame, text="Upload Media", bg="#28a745", fg="white", command=self.upload_media).pack(side=tk.RIGHT, padx=10)
-
-        posts = get_public_media() + get_private_media_for_user(self.user, get_friends_list(self.user))
-        posts.sort(key=lambda x: x[6], reverse=True)
-        selected_type = self.file_type_var.get()
+        posts = get_public_media() + get_private_media_for_user(
+            self.user, get_friends_list(self.user)
+        )
 
         for media_id, uid, uname, path, ftype, vis, time in posts:
-            if selected_type != "all":
-                if selected_type == "image" and not ftype.startswith("image"):
-                    continue
-                if selected_type == "audio" and not ftype.startswith("audio"):
-                    continue
-                if selected_type == "video" and not ftype.startswith("video"):
-                    continue
-                if selected_type == "document" and not ("pdf" in ftype or "text" in ftype):
-                    continue
+            card = tk.Frame(self.media_scrollable, bg=CARD)
+            card.pack(fill="x", padx=12, pady=8)
 
-            card = tk.Frame(self.media_scrollable, bd=2, relief="ridge", padx=10, pady=5, bg="#f7f7f7")
-            card.pack(fill="x", padx=10, pady=5)
+            tk.Label(card, text=uname, bg=CARD, fg=TEXT,
+                     font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=10)
 
-            tk.Label(card, text=f"{uname} • {os.path.basename(path)} • {vis} • {time}",
-                     bg="#f7f7f7", font=("Arial", 10, "bold")).pack(anchor="w")
-
-            if ftype.startswith("image"):
+            if ftype and "image" in ftype:
                 try:
                     img = Image.open(path)
-                    img.thumbnail((120, 120))
-                    img = ImageTk.PhotoImage(img)
-                    img_label = tk.Label(card, image=img, bg="#f7f7f7")
-                    img_label.image = img
-                    img_label.pack(anchor="w")
-                except:
-                    tk.Label(card, text="[Image can't be loaded]", fg="red", bg="#f7f7f7").pack(anchor="w")
-            else:
-                tk.Label(card, text=ftype, fg="blue", bg="#f7f7f7").pack(anchor="w")
+                    img.thumbnail((300, 300))
+                    photo = ImageTk.PhotoImage(img)
 
-            btns = tk.Frame(card, bg="#f7f7f7")
-            btns.pack(anchor="e")
-            tk.Button(btns, text="Open", command=lambda p=path: self.open_file(p)).pack(side="left", padx=5)
+                    lbl = tk.Label(card, image=photo, bg=CARD)
+                    lbl.image = photo
+                    lbl.pack(pady=5)
+                except tk.TclError:
+                    tk.Label(card, text="Preview failed", fg=SUBTEXT).pack()
+            else:
+                tk.Label(card, text=os.path.basename(path),
+                         fg=SUBTEXT).pack(pady=5)
+
+            btn_frame = tk.Frame(card, bg=CARD)
+            btn_frame.pack(pady=5)
+
+            tk.Button(btn_frame, text="Open",
+                      bg=PRIMARY, fg="white",
+                      command=lambda p=path: os.startfile(p)
+                      ).pack(side="left", padx=5)
+
             if uid == self.user:
-                tk.Button(btns, text="Delete", command=lambda m=media_id: self.delete_post(m)).pack(side="left", padx=5)
-
-    def open_file(self, path):
-        try:
-            if not os.path.exists(path):
-                messagebox.showerror("File Not Found", f"The file does not exist:\n{path}")
-                return
-            sys_platform = platform.system()
-            if sys_platform == "Windows":
-                os.startfile(path)
-            elif sys_platform == "Darwin":
-                subprocess.call(["open", path])
-            elif sys_platform == "Linux":
-                if "ANDROID_STORAGE" in os.environ:
-                    os.system(f'am start -a android.intent.action.VIEW -d "file://{path}"')
-                else:
-                    try:
-                        subprocess.call(["xdg-open", path])
-                    except FileNotFoundError:
-                        webbrowser.open(f"file://{path}")
-            else:
-                webbrowser.open(f"file://{path}")
-        except Exception as e:
-            messagebox.showerror("Open File Error", f"Unable to open file:\n{e}")
+                tk.Button(btn_frame, text="Delete", bg=ERROR, fg="white",
+                          command=lambda m=media_id: self.delete_post(m)
+                          ).pack(side="left", padx=5)
 
     def delete_post(self, media_id):
-        if messagebox.askyesno("Confirm", "Delete this media?"):
-            delete_media(media_id, self.user)
-            self.display_media_feed()
-
-    def toggle_dark(self):
-        self.is_dark = not self.is_dark
-        bg = "#222" if self.is_dark else "#f9f9f9"
-        fg = "white" if self.is_dark else "black"
-        self.apply_theme(self.root, bg, fg)
-
-    def apply_theme(self, widget, bg, fg):
-        try:
-            widget.configure(bg=bg, fg=fg)
-        except:
-            pass
-        for child in widget.winfo_children():
-            self.apply_theme(child, bg, fg)
-
-    def open_profile(self):
-        ProfileScreen(self.user)
-
-    def auto_refresh(self):
-        self.render_requests()
-        self.render_friends()
-        self.root.after(30000, self.auto_refresh)
+        delete_media(media_id, self.user)
+        self.show_toast("Deleted", ERROR)
+        self.display_media_feed()

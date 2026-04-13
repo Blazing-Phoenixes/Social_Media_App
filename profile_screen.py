@@ -1,231 +1,309 @@
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import filedialog
 from PIL import Image, ImageTk
 import os
 import re
 from pathlib import Path
+
 from Login_database import (
     get_user_details, update_password, verify_password,
     update_email, update_profile_image, get_profile_image_path,
     delete_user
 )
 
-LANGUAGES = {
-    "en": {
-        "title": "Settings",
-        "username": "Username",
-        "phone": "Phone",
-        "email": "Email ID",
-        "update_email": "Update Email",
-        "change_pwd": "Change Password",
-        "old_pwd": "Old Password",
-        "new_pwd": "New Password",
-        "update_pwd": "Update Password",
-        "close": "Close",
-        "upload_pic": "Upload Profile Picture",
-        "language": "Language: English",
-        "toggle_dark": "Toggle Dark Mode",
-        "strength": "Strength",
-        "delete_acc": "Delete Account",
-        "back": "Back"
-    },
-    "ta": {
-        "title": "அமைப்புகள்",
-        "username": "பயனர் பெயர்",
-        "phone": "தொலைபேசி",
-        "email": "மின்னஞ்சல்",
-        "update_email": "மின்னஞ்சலை புதுப்பிக்கவும்",
-        "change_pwd": "கடவுச்சொல்லை மாற்று",
-        "old_pwd": "பழைய கடவுச்சொல்",
-        "new_pwd": "புதிய கடவுச்சொல்",
-        "update_pwd": "புதுப்பி",
-        "close": "மூடு",
-        "upload_pic": "புகைப்படத்தை பதிவேற்று",
-        "language": "மொழி: தமிழ்",
-        "toggle_dark": "இருண்ட நிலையை மாற்று",
-        "strength": "வலிமை",
-        "delete_acc": "கணக்கை நீக்கு",
-        "back": "பின்வாங்கு"
-    }
-}
+# ---------------- MODERN UI ----------------
+BG = "#f8fafc"
+CARD = "#ffffff"
+PRIMARY = "#6366f1"
+HOVER = "#4f46e5"
+TEXT = "#0f172a"
+SUBTEXT = "#64748b"
+BORDER = "#e5e7eb"
+SUCCESS = "#22c55e"
+ERROR = "#ef4444"
 
-class ProfileScreen:
-    def __init__(self, identifier):
-        self.identifier = identifier
-        self.dark_mode = False
-        self.lang = "en"
+FONT = ("Segoe UI", 11)
+TITLE_FONT = ("Segoe UI", 22, "bold")
 
-        self.root = tk.Toplevel()
-        self.root.title("Settings")
-        self.root.geometry("450x650")
-        self.root.resizable(True, True)
 
-        self.container = tk.Frame(self.root, padx=10, pady=10)
-        self.container.pack(expand=True, fill=tk.BOTH)
+# ---------------- TOAST ----------------
+class Toast(tk.Toplevel):
+    def __init__(self, parent, message, color=SUCCESS):
+        super().__init__(parent)
+        self.overrideredirect(True)
+        self.configure(bg=color)
 
-        self.theme_btn = tk.Button(self.container, command=self.toggle_theme)
-        self.theme_btn.pack(anchor="ne", padx=5, pady=5)
+        tk.Label(self, text=message, bg=color, fg="white",
+                 font=("Segoe UI", 10, "bold")).pack(ipadx=14, ipady=8)
 
-        self.lang_btn = tk.Button(self.container, command=self.switch_language)
-        self.lang_btn.pack(anchor="ne", padx=5)
+        self.after(2200, self.destroy)
 
-        self.title_label = tk.Label(self.container, font=("Arial", 16, "bold"))
-        self.title_label.pack(pady=10)
+        self.update_idletasks()
+        x = parent.winfo_rootx() + parent.winfo_width() - 280
+        y = parent.winfo_rooty() + 30
+        self.geometry(f"+{x}+{y}")
 
-        user = get_user_details(identifier)
-        if not user:
-            tk.Label(self.container, text="User not found.", fg="red").pack()
+
+# ---------------- CONFIRM DIALOG ----------------
+class ConfirmDialog(tk.Toplevel):
+    def __init__(self, parent, text, confirm_callback):
+        super().__init__(parent)
+        self.configure(bg=CARD)
+        self.geometry("320x160")
+        self.resizable(False, False)
+        self.title("Confirm")
+
+        tk.Label(self, text=text, bg=CARD, fg=TEXT,
+                 font=FONT, wraplength=260).pack(pady=25)
+
+        btn_frame = tk.Frame(self, bg=CARD)
+        btn_frame.pack()
+
+        tk.Button(btn_frame, text="Cancel", bg=BORDER,
+                  relief="flat", width=10,
+                  command=self.destroy).pack(side="left", padx=10)
+
+        tk.Button(btn_frame, text="Yes", bg=ERROR, fg="white",
+                  relief="flat", width=10,
+                  command=lambda: [confirm_callback(), self.destroy()]
+                  ).pack(side="left", padx=10)
+
+
+# ---------------- SCROLLABLE ----------------
+class ScrollableFrame(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, bg=BG)
+
+        self.canvas = tk.Canvas(self, bg=BG, highlightthickness=0)
+        self.scrollbar = tk.Scrollbar(self, command=self.canvas.yview)
+
+        self.inner = tk.Frame(self.canvas, bg=BG)
+
+        self.inner.bind("<Configure>",
+                        lambda e: self.canvas.configure(
+                            scrollregion=self.canvas.bbox("all")))
+
+        self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+
+        # Smooth scroll (Windows + touchpad)
+        self.canvas.bind_all("<MouseWheel>",
+                             lambda e: self.canvas.yview_scroll(
+                                 int(-1 * (e.delta / 120)), "units"))
+
+        self.canvas.bind_all("<Button-4>",
+                             lambda e: self.canvas.yview_scroll(-1, "units"))
+        self.canvas.bind_all("<Button-5>",
+                             lambda e: self.canvas.yview_scroll(1, "units"))
+
+
+# ---------------- MODERN BUTTON ----------------
+def modern_button(parent, text, cmd, bg=PRIMARY, fg="white"):
+    btn = tk.Label(parent, text=text, bg=bg, fg=fg,
+                   font=("Segoe UI", 10, "bold"),
+                   padx=14, pady=7, cursor="hand2")
+
+    def on_enter(e): btn.config(bg=HOVER)
+    def on_leave(e): btn.config(bg=bg)
+
+    btn.bind("<Enter>", on_enter)
+    btn.bind("<Leave>", on_leave)
+    btn.bind("<Button-1>", lambda e: cmd())
+
+    return btn
+
+
+# ---------------- FLOATING ENTRY ----------------
+class FloatingEntry(tk.Frame):
+    def __init__(self, parent, placeholder="", show=None):
+        super().__init__(parent, bg=CARD,
+                         highlightbackground=BORDER,
+                         highlightthickness=1)
+
+        self.placeholder = placeholder
+
+        self.entry = tk.Entry(self, bd=0, font=FONT, show=show)
+        self.entry.pack(fill="both", padx=12, pady=10)
+
+        self.label = tk.Label(self, text=placeholder, fg=SUBTEXT,
+                              bg=CARD, font=("Segoe UI", 9))
+        self.label.place(x=14, y=10)
+
+        self.entry.bind("<FocusIn>", self.float_up)
+        self.entry.bind("<FocusOut>", self.float_down)
+
+    def float_up(self, e=None):
+        self.label.config(font=("Segoe UI", 8))
+        self.label.place(x=10, y=-8)
+
+    def float_down(self, e=None):
+        if not self.entry.get():
+            self.label.config(font=("Segoe UI", 9))
+            self.label.place(x=14, y=10)
+
+    def get(self):
+        return self.entry.get()
+
+    def clear(self):
+        self.entry.delete(0, tk.END)
+        self.float_down()
+
+
+# ---------------- PROFILE FRAME ----------------
+class ProfileFrame(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=BG)
+        self.app = app
+        self.identifier = None
+
+        self.scroll = ScrollableFrame(self)
+        self.scroll.pack(fill="both", expand=True)
+
+        wrapper = tk.Frame(self.scroll.inner, bg=BG)
+        wrapper.pack(expand=True)
+
+        self.container = tk.Frame(wrapper, bg=CARD, padx=50, pady=40)
+        self.container.pack(pady=50)
+
+        tk.Label(self.container, text="Account Settings",
+                 font=TITLE_FONT, bg=CARD, fg=TEXT).pack(pady=15)
+
+        self.pic_label = tk.Label(self.container, bg=CARD)
+        self.pic_label.pack(pady=10)
+
+        modern_button(self.container, "Upload Picture",
+                      self.upload_picture).pack(pady=8)
+
+        self.info1 = tk.Label(self.container, bg=CARD, fg=TEXT, font=FONT)
+        self.info1.pack()
+
+        self.info2 = tk.Label(self.container, bg=CARD, fg=TEXT, font=FONT)
+        self.info2.pack(pady=(0, 10))
+
+        # EMAIL
+        self.email_entry = FloatingEntry(self.container, "Email")
+        self.email_entry.pack(fill="x", pady=10)
+
+        modern_button(self.container, "Update Email",
+                      self.update_email_func).pack(pady=10)
+
+        # PASSWORD
+        tk.Label(self.container, text="Change Password",
+                 font=("Segoe UI", 15, "bold"),
+                 bg=CARD).pack(pady=20)
+
+        self.old_entry = FloatingEntry(self.container, "Old Password", "*")
+        self.old_entry.pack(fill="x", pady=6)
+
+        self.new_entry = FloatingEntry(self.container, "New Password", "*")
+        self.new_entry.pack(fill="x", pady=6)
+
+        self.new_entry.entry.bind("<KeyRelease>", self.check_strength)
+
+        self.strength_label = tk.Label(self.container, bg=CARD, font=FONT)
+        self.strength_label.pack(pady=5)
+
+        modern_button(self.container, "Update Password",
+                      self.change_password).pack(pady=12)
+
+        modern_button(self.container, "Delete Account",
+                      self.confirm_delete, bg=ERROR).pack(pady=10)
+
+        modern_button(self.container, "Back",
+                      lambda: self.app.show_frame(
+                          "HomeFrame", user=self.app.current_user),
+                      bg=BORDER, fg=TEXT).pack(pady=5)
+
+    # ---------------- LOAD ----------------
+    def load_data(self, user):
+        self.identifier = user
+        data = get_user_details(user)
+
+        if not data:
+            Toast(self, "User not found", ERROR)
             return
 
-        self.username, self.phone, self.email, _ = user
-        self.profile_pic_path = get_profile_image_path(self.identifier)
-        if not self.profile_pic_path or not os.path.exists(self.profile_pic_path):
-            self.profile_pic_path = f"profile_pics/{self.username}.png"
+        self.username, self.phone, self.email, _ = data
+        self.profile_pic_path = get_profile_image_path(user) or ""
 
-        self.profile_img = None
-        self.pic_label = tk.Label(self.container)
-        self.pic_label.pack()
-        self.load_profile_image()
+        self.info1.config(text=f"Username: {self.username}")
+        self.info2.config(text=f"Phone: {self.phone}")
 
-        self.upload_btn = tk.Button(self.container, command=self.upload_picture)
-        self.upload_btn.pack(pady=5)
+        self.email_entry.entry.delete(0, tk.END)
+        self.email_entry.entry.insert(0, self.email or "")
 
-        self.info_labels = [
-            tk.Label(self.container, font=("Arial", 12)),
-            tk.Label(self.container, font=("Arial", 12))
-        ]
-        for label in self.info_labels:
-            label.pack(pady=3)
+        self.load_image()
 
-        self.email_label = tk.Label(self.container)
-        self.email_label.pack(pady=(15, 0))
-        self.email_entry = tk.Entry(self.container, width=30)
-        self.email_entry.insert(0, self.email or "")
-        self.email_entry.pack()
-        self.email_btn = tk.Button(self.container, command=self.update_email_func)
-        self.email_btn.pack(pady=5)
-
-        self.pass_section = tk.Label(self.container, font=("Arial", 14, "bold"))
-        self.pass_section.pack(pady=15)
-
-        self.old_label = tk.Label(self.container)
-        self.old_label.pack()
-        self.old_entry = tk.Entry(self.container, show="*", width=30)
-        self.old_entry.pack()
-
-        self.new_label = tk.Label(self.container)
-        self.new_label.pack()
-        self.new_entry = tk.Entry(self.container, show="*", width=30)
-        self.new_entry.pack()
-        self.new_entry.bind("<KeyRelease>", self.check_strength)
-
-        self.strength_label = tk.Label(self.container)
-        self.strength_label.pack()
-
-        self.update_pass_btn = tk.Button(self.container, command=self.change_password)
-        self.update_pass_btn.pack(pady=10)
-
-        self.delete_btn = tk.Button(self.container, fg="red", command=self.delete_account)
-        self.delete_btn.pack(pady=10)
-
-        self.close_btn = tk.Button(self.container, command=self.root.destroy)
-        self.close_btn.pack(pady=5)
-
-        self.apply_language()
-        self.apply_theme()
-
-    def toggle_theme(self):
-        self.dark_mode = not self.dark_mode
-        self.apply_theme()
-
-    def apply_theme(self):
-        bg = "#121212" if self.dark_mode else "#ffffff"
-        fg = "#ffffff" if self.dark_mode else "#000000"
-        self.root.configure(bg=bg)
-        self.container.configure(bg=bg)
-        for widget in self.container.winfo_children():
-            try:
-                widget.configure(bg=bg, fg=fg)
-            except:
-                pass
-        self.strength_label.configure(bg=bg)
-
-    def switch_language(self):
-        self.lang = "ta" if self.lang == "en" else "en"
-        self.apply_language()
-
-    def apply_language(self):
-        t = LANGUAGES[self.lang]
-        self.title_label.config(text=t["title"])
-        self.info_labels[0].config(text=f"{t['username']}: {self.username}")
-        self.info_labels[1].config(text=f"{t['phone']}: {self.phone}")
-        self.email_label.config(text=t["email"])
-        self.email_btn.config(text=t["update_email"])
-        self.pass_section.config(text=t["change_pwd"])
-        self.old_label.config(text=t["old_pwd"])
-        self.new_label.config(text=t["new_pwd"])
-        self.update_pass_btn.config(text=t["update_pwd"])
-        self.close_btn.config(text=t["back"])
-        self.upload_btn.config(text=t["upload_pic"])
-        self.theme_btn.config(text=t["toggle_dark"])
-        self.lang_btn.config(text=t["language"])
-        self.delete_btn.config(text=t["delete_acc"])
-
-    def load_profile_image(self):
+    # ---------------- IMAGE ----------------
+    def load_image(self):
         try:
-            if os.path.exists(self.profile_pic_path):
-                img = Image.open(self.profile_pic_path).resize((100, 100))
-                self.profile_img = ImageTk.PhotoImage(img)
-                self.pic_label.configure(image=self.profile_img)
-                self.pic_label.image = self.profile_img
+            if self.profile_pic_path and os.path.exists(self.profile_pic_path):
+                img = Image.open(self.profile_pic_path).resize((110, 110))
+                self.img = ImageTk.PhotoImage(img)
+                self.pic_label.config(image=self.img, text="")
             else:
-                self.pic_label.configure(image="", text="No image", font=("Arial", 10))
-        except Exception as e:
-            print("Image load error:", e)
-            self.pic_label.configure(text="Error loading image", font=("Arial", 10))
+                self.pic_label.config(text="No Image", image="")
+        except tk.TclError:
+            self.pic_label.config(text="Error loading image", image="")
 
     def upload_picture(self):
-        path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png *.jpg *.jpeg")])
+        path = filedialog.askopenfilename(
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg")])
+
         if path and Path(path).suffix.lower() in [".png", ".jpg", ".jpeg"]:
             if update_profile_image(self.identifier, path):
                 self.profile_pic_path = path
-                self.load_profile_image()
-                messagebox.showinfo("Success", "Profile picture updated successfully!")
+                self.load_image()
+                Toast(self, "Profile updated")
             else:
-                messagebox.showerror("Error", "Failed to update profile image in database.")
-        else:
-            messagebox.showerror("Invalid File", "Please select a valid image file (.png/.jpg/.jpeg)")
+                Toast(self, "Update failed", ERROR)
 
+    # ---------------- EMAIL ----------------
     def update_email_func(self):
         email = self.email_entry.get().strip()
+
         if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-            messagebox.showerror("Invalid Email", "Please enter a valid email address.")
-            return
-        msg = update_email(self.identifier, email)
-        messagebox.showinfo("Email", msg)
+            Toast(self, "Invalid email", ERROR)
+        else:
+            Toast(self, update_email(self.identifier, email))
 
+        self.email_entry.clear()   # ✅ ALWAYS CLEAR
+
+    # ---------------- PASSWORD ----------------
     def change_password(self):
-        old_pass = self.old_entry.get().strip()
-        new_pass = self.new_entry.get().strip()
-        if not old_pass or not new_pass:
-            messagebox.showerror("Error", "Fill all password fields.")
-            return
-        if not verify_password(self.identifier, old_pass):
-            messagebox.showerror("Error", "Old password is incorrect.")
-            return
-        msg = update_password(self.identifier, new_pass)
-        messagebox.showinfo("Password", msg)
-        self.root.destroy()
+        old = self.old_entry.get().strip()
+        new = self.new_entry.get().strip()
 
-    def check_strength(self, event=None):
+        if not verify_password(self.identifier, old):
+            Toast(self, "Wrong old password", ERROR)
+        else:
+            Toast(self, update_password(self.identifier, new))
+
+        self.clear_password()   # ✅ ALWAYS CLEAR
+
+    def clear_password(self):
+        self.old_entry.clear()
+        self.new_entry.clear()
+        self.strength_label.config(text="")
+
+    def check_strength(self, e=None):
         pwd = self.new_entry.get()
-        score = sum(bool(re.search(p, pwd)) for p in [r"[A-Z]", r"[a-z]", r"[0-9]", r"[!@#$%^&*()]"])
+        score = sum(bool(re.search(p, pwd)) for p in
+                    [r"[A-Z]", r"[a-z]", r"[0-9]", r"[!@#$%^&*()]"])
+
         strength = "Weak" if score < 2 else "Medium" if score == 2 else "Strong"
-        color = {"Weak": "red", "Medium": "orange", "Strong": "green"}[strength]
-        self.strength_label.config(text=f"{LANGUAGES[self.lang]['strength']}: {strength}", fg=color)
+        color = {"Weak": ERROR, "Medium": "#f59e0b", "Strong": SUCCESS}[strength]
+
+        self.strength_label.config(text=f"Strength: {strength}", fg=color)
+
+    # ---------------- DELETE ----------------
+    def confirm_delete(self):
+        ConfirmDialog(self, "Delete your account permanently?",
+                      self.delete_account)
 
     def delete_account(self):
-        if messagebox.askyesno("Delete", "Are you sure you want to delete this account? This action cannot be undone."):
-            msg = delete_user(self.identifier)
-            messagebox.showinfo("Account", msg)
-            self.root.destroy()
+        Toast(self, delete_user(self.identifier))
+        self.app.show_frame("LoginFrame")

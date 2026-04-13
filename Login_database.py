@@ -1,10 +1,11 @@
+# Login_database.py
 import sqlite3
 import re
 import os
 from passlib.hash import pbkdf2_sha256
 from datetime import datetime
 
-DB_NAME = "users.db"
+DB_NAME = "social_media.db"
 
 # -------------------- DATABASE INITIALIZATION --------------------
 def connect_db():
@@ -237,8 +238,16 @@ def update_request_status(sender, receiver, action):
         return "Invalid action."
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
+        # ✅ If accepted → add to friends table
         cursor.execute("UPDATE friend_requests SET status=? WHERE sender=? AND receiver=?", 
-                       (action, sender, receiver))
+                           (action, sender, receiver))
+        if action == "rejected":
+        # ✅ Delete request ONLY after action
+            cursor.execute(
+            "DELETE FROM friend_requests WHERE sender=? AND receiver=?",
+            (sender, receiver)
+        )
+
     return f"Request {action}!"
 
 def get_friends_list(user):
