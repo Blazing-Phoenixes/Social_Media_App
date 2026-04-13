@@ -26,11 +26,11 @@ jobs:
 
     - name: Build EXE with PyInstaller
       run: |
-        pyinstaller --onefile --windowed ^
-        --name SocialMediaApp ^
-        --add-data "*.png;." ^
-        --add-data "*.jpg;." ^
-        --add-data "*.ico;." ^
+        pyinstaller --onefile --windowed `
+        --name SocialMediaApp `
+        --add-data "*.png;." `
+        --add-data "*.jpg;." `
+        --add-data "*.ico;." `
         main.py
 
     - name: Upload EXE
