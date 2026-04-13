@@ -10,29 +10,28 @@ jobs:
     runs-on: windows-latest
 
     steps:
+    # 🔹 Step 1: Checkout repo
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # 🔹 Step 2: Setup Python
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
+    # 🔹 Step 3: Install dependencies
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller pillow
+        pip install pyinstaller
 
+    # 🔹 Step 4: Build EXE
     - name: Build EXE with PyInstaller
-      run: |
-        pyinstaller --onefile --windowed `
-        --name SocialMediaApp `
-        --add-data "*.png;." `
-        --add-data "*.jpg;." `
-        --add-data "*.ico;." `
-        main.py
+      run: pyinstaller --onefile --windowed --name SocialMediaApp main.py
 
+    # 🔹 Step 5: Upload EXE
     - name: Upload EXE
       uses: actions/upload-artifact@v4
       with:
