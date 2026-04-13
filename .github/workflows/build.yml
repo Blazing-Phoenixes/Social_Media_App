@@ -1,4 +1,4 @@
-name: Phoenix-Media
+name: Build Windows EXE
 
 on:
   push:
